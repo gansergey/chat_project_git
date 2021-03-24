@@ -1,10 +1,11 @@
 /*Класс, который хранит информацию о клиентах*/
 
-import javax.swing.*;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.IOException;
 import java.net.Socket;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class ClientServer {
     private String nickname;
@@ -21,52 +22,62 @@ public class ClientServer {
             this.in = new DataInputStream(socket.getInputStream());
             this.out = new DataOutputStream(socket.getOutputStream());
             this.nickname = "Клиент №: " + number;
-            new Thread(() -> {
 
-                boolean continueChat = true;
+            ExecutorService executorService = Executors.newCachedThreadPool();
+            executorService.submit(new Runnable() {
+                @Override
+                public void run() {
+                    boolean continueChat = true;
                 /*Цикл, для того, чтобы читать все сообщения одного клиента.
                 Только этот класс может читать сообщения клиентов.*/
-                String msg = null;
-                boolean isAuthorised = false;
-                try {
-                    while (!isAuthorised && continueChat) {
-                        msg = in.readUTF();//читаем сообщение клиента
-                        if (msg.startsWith("/auth")) {
-                            String[] tokens = msg.split("\\s");
-                            nickname = server.getAuthService().getNicknameByLoginAndPassword(tokens[1], tokens[2]);
-                            if (nickname != null) {
-                                isAuthorised = true;
-                                sendMessage("/authok");
-                                server.subscribe(this);//Добавляем клиента в коллекцию
-                            } else {
-                               sendMessage("/error");
+                    String msg = null;
+                    boolean isAuthorised = false;
+                    try {
+                        while (!isAuthorised && continueChat) {
+                            msg = in.readUTF();//читаем сообщение клиента
+                            if (msg.startsWith("/auth")) {
+                                String[] tokens = msg.split("\\s");
+                                nickname = server.getAuthService().getNicknameByLoginAndPassword(tokens[1], tokens[2]);
+                                if (nickname != null) {
+                                    isAuthorised = true;
+                                    sendMessage("/authok");
+                                    server.subscribe(ClientServer.this);//Добавляем клиента в коллекцию
+                                } else {
+                                    sendMessage("/error");
+                                }
                             }
-                        }
-                        if (msg.equalsIgnoreCase("/end")) {
-                            sendMessage("/end");
-                            continueChat = false;
-                        }
-                    }
-                    while (continueChat) {
-                        msg = in.readUTF();//читаем сообщение клиента
-                        if (msg.startsWith("/")) {
                             if (msg.equalsIgnoreCase("/end")) {
                                 sendMessage("/end");
                                 continueChat = false;
-                            } else if (msg.startsWith("/w")) {
-                                String[] equalsUser = msg.split("\\s");
-                                server.broadcastMessagePrivate(nickname + " : " + msg.substring(3), equalsUser[1], nickname);
                             }
-                        } else {
-                            server.broadcastMessage(nickname + " : " + msg); //просим сервер отправить сообщения всем клиентам
                         }
+                        while (continueChat) {
+                            msg = in.readUTF();//читаем сообщение клиента
+                            if (msg.startsWith("/")) {
+                                if (msg.equalsIgnoreCase("/end")) {
+                                    sendMessage("/end");
+                                    continueChat = false;
+                                } else if (msg.startsWith("/w")) {
+                                    String[] equalsUser = msg.split("\\s");
+                                    server.broadcastMessagePrivate(nickname + " : " + msg.substring(3), equalsUser[1], nickname);
+                                }
+                            } else {
+                                server.broadcastMessage(nickname + " : " + msg); //просим сервер отправить сообщения всем клиентам
+                            }
+                        }
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    } finally {
+                        disconnect();
                     }
-                } catch (IOException e) {
-                    e.printStackTrace();
-                } finally {
-                    disconnect();
                 }
-            }).start();
+            });
+
+
+//            new Thread(() -> {
+//
+//
+//            }).start();
 
         } catch (IOException e) {
             e.printStackTrace();

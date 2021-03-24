@@ -5,17 +5,33 @@ import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
+import java.io.BufferedReader;
+import java.io.FileNotFoundException;
+import java.io.FileReader;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.List;
+import java.util.stream.Collectors;
+
+import static java.nio.file.StandardOpenOption.APPEND;
+import static java.nio.file.StandardOpenOption.CREATE;
 
 public class ClientGUI extends JFrame {
 
     private JTextArea txtClientsList;
     private JTextArea txtMessageList;
     private JTextField txtMessageSend;
+    private static final int COUNT_HISTORY_LINES = 100;
+    private static String loginUser;
+    private static final Path path = Paths.get("client/history/");
 
     private ClientNetwork clientNetwork;
 
     JPanel loginPanel = new JPanel();
     JPanel mainPanel = new JPanel();
+    JTextField login = new JTextField();
 
     public ClientGUI() {
 
@@ -168,6 +184,7 @@ public class ClientGUI extends JFrame {
             public void actionPerformed(ActionEvent e) {
                 clientNetwork.sendMessage("/auth " + login.getText()
                         + " " + String.valueOf(password.getPassword()));
+                loginUser = login.getText();
                 login.setText("");
                 password.setText("");
             }
@@ -176,12 +193,57 @@ public class ClientGUI extends JFrame {
         add(loginPanel);
     }
 
+    //Метод сохранения истории
+    private void saveHistory(String nickname, String msg) {
+
+        if (Files.notExists(path)) {
+            try {
+                Files.createDirectories(path);
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+        try {
+            if (!msg.startsWith("/clients ")) {
+                Files.write(Paths.get(path + "/" + nickname), (msg + System.lineSeparator()).getBytes(),
+                        CREATE, APPEND);
+            }
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void loadHistory(String login) {
+        List<String> lines = null;
+        if (!Files.notExists(Path.of(path + "/" + login))) {
+            try {
+                lines = new BufferedReader(new FileReader(path + "/" + login)).lines().
+                        collect(Collectors.toList());
+            } catch (FileNotFoundException ex) {
+                ex.printStackTrace();
+            }
+            int startPos = 0;
+            assert lines != null;
+            if (lines.size() > COUNT_HISTORY_LINES) {
+                startPos = lines.size() - COUNT_HISTORY_LINES;
+            }
+            for (int i = startPos; i < lines.size(); i++) {
+                txtMessageList.append(lines.get(i) + System.lineSeparator());
+            }
+        }
+    }
+
     private void  setCallBacks(){
         this.clientNetwork.setCallOnChangeClientList(clientsList -> txtClientsList.setText(clientsList));
-        this.clientNetwork.setCallOnMsgRecieved(message -> txtMessageList.append(message + "\n"));
+        this.clientNetwork.setCallOnMsgRecieved(message -> {
+            txtMessageList.append(message + "\n");
+            saveHistory(loginUser, message);
+        });
         this.clientNetwork.setCallOnAuth(s -> {
+            login.getText();
             loginPanel.setVisible(false);
             mainPanel();
+            loadHistory(loginUser);
         });
         this.clientNetwork.setCallOnError(message ->
                 JOptionPane.showMessageDialog(null, message, "Внимание!", JOptionPane.ERROR_MESSAGE));
